@@ -48,7 +48,7 @@ async function saveNewMember(userId, displayName, groupId) {
 }
 
 // 2. ระบบตรวจสอบอายุสมาชิก
-cron.schedule("* * * * *", async () => {
+cron.schedule("0 9 * * *", async () => {
   console.log("🏃 กำลังตรวจสอบรายชื่อสมาชิก...");
   try {
     await doc.loadInfo();
