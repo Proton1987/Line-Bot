@@ -128,20 +128,23 @@ async function handleEvent(event) {
           member.userId,
         );
 
-        // 1. บันทึกข้อมูลคนเข้าใหม่ลง Sheet ทันที
+        // 1. บันทึกข้อมูลคนเข้าใหม่ลง Sheet หน้าแรก (ดึงตามลำดับ index 0)
         await saveNewMember(member.userId, profile.displayName, groupId);
 
-        // 2. ดึงรูปจาก Sheet 'Config' ช่อง B1
+        // 2. ดึงรูปจาก Sheet 'Config'
         await doc.loadInfo();
         const configSheet = doc.sheetsByTitle["Config"];
         let welcomeImageUrl = "";
+
         if (configSheet) {
+          // โหลดเฉพาะช่อง B1 มาใช้งาน
           await configSheet.loadCells("B1");
-          welcomeImageUrl = configSheet.getCellByA1("B1").value;
+          const cellB1 = configSheet.getCellByA1("B1");
+          welcomeImageUrl = cellB1.value ? cellB1.value.toString().trim() : "";
         }
 
         const messages = [];
-        // ถ้ามีลิงก์รูปใน B1 ให้ใส่รูปเข้าไปในข้อความตอบกลับ
+        // ตรวจสอบว่าลิงก์ใน B1 เป็นลิงก์รูปภาพที่ใช้งานได้จริง (ต้องขึ้นด้วย http)
         if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
           messages.push({
             type: "image",
