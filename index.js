@@ -12,12 +12,10 @@ const config = {
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
-const LINE_AT_ID = "@AAAA";
+const LINE_AT_ID = "@AAAA"; // แก้เป็น ID แอดมินของพี่
 
-// --- ใช้แค่ชุดนี้ชุดเดียว (สำหรับ Cloud) ---
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  // แก้ไขเรื่อง \n ให้รองรับทั้งแบบพิมพ์ตรงและตัวแปรระบบ
   key: process.env.GOOGLE_PRIVATE_KEY
     ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
     : undefined,
@@ -28,7 +26,6 @@ const client = new line.Client(config);
 const app = express();
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
-// 1. ฟังก์ชันบันทึกสมาชิกใหม่
 async function saveNewMember(userId, displayName, groupId) {
   try {
     await doc.loadInfo();
@@ -47,7 +44,6 @@ async function saveNewMember(userId, displayName, groupId) {
   }
 }
 
-// 2. ระบบตรวจสอบอายุสมาชิก
 cron.schedule("0 9 * * *", async () => {
   console.log("🏃 กำลังตรวจสอบรายชื่อสมาชิก...");
   try {
@@ -145,21 +141,45 @@ async function handleEvent(event) {
     });
   }
 
+  // --- ส่วนที่ปรับปรุง: รองรับริชเมนู 3 ปุ่ม ---
   if (event.type === "message" && event.message.type === "text") {
-    if (userId === ADMIN_LINE_ID) return null;
-    let name = "สมาชิก";
-    try {
-      const p = await client.getGroupMemberProfile(groupId, userId);
-      name = p.displayName;
-    } catch (e) {}
-    await client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `ทักแอดมินน่ะค่ะ line ของแอดมิน: ${LINE_AT_ID}`,
-    });
-    await client.pushMessage(ADMIN_LINE_ID, {
-      type: "text",
-      text: `📢 มีคนทักในกลุ่ม!\n👤 ชื่อ: ${name}\n💬: ${event.message.text}`,
-    });
+    const userMsg = event.message.text;
+
+    if (userMsg === "สนใจ") {
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "ขอบคุณที่สนใจครับพี่! กลุ่มของเรามีสาวๆ ไลฟ์สดให้ดูทุกวัน\nสมัครวันนี้ดูได้ทันทีครับ",
+      });
+    } else if (userMsg === "ติดต่อแอดมิด") {
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `ทักหาแอดมินได้เลยที่นี่ค่ะ: ${LINE_AT_ID}\nหรือรอสักครู่ เดี๋ยวแอดมินทักกลับไปค่ะ`,
+      });
+    } else if (userMsg === "ช่องทางชำระเงิน") {
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "🏦 ช่องทางโอนเงิน\nธนาคาร: กสิกรไทย\nเลขบัญชี: xxx-x-xxxxx-x\nชื่อบัญชี: xxxxxxxx\n\nโอนแล้วส่งสลิปไว้ได้เลยค่ะ",
+      });
+    } else {
+      // กรณีเป็นข้อความอื่นๆ ให้แจ้งแอดมินเหมือนเดิม
+      if (userId === ADMIN_LINE_ID) return null;
+      let name = "สมาชิก";
+      try {
+        if (groupId) {
+          const p = await client.getGroupMemberProfile(groupId, userId);
+          name = p.displayName;
+        }
+      } catch (e) {}
+
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `ทักแอดมินน่ะค่ะ line ของแอดมิน: ${LINE_AT_ID}`,
+      });
+      await client.pushMessage(ADMIN_LINE_ID, {
+        type: "text",
+        text: `📢 มีคนทัก!\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
+      });
+    }
   }
 }
 
