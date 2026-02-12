@@ -12,7 +12,7 @@ const config = {
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
-const LINE_AT_ID = "@Wash";
+const LINE_AT_ID = "@AAAA";
 
 // --- ใช้แค่ชุดนี้ชุดเดียว (สำหรับ Cloud) ---
 const serviceAccountAuth = new JWT({
@@ -130,7 +130,7 @@ async function handleEvent(event) {
         await saveNewMember(member.userId, profile.displayName, groupId);
         await client.replyMessage(event.replyToken, {
           type: "text",
-          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ระบบเริ่มนับเวลา 30 วันแล้วครับ`,
+          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ`,
         });
       } catch (err) {
         console.error(err);
@@ -154,7 +154,7 @@ async function handleEvent(event) {
     } catch (e) {}
     await client.replyMessage(event.replyToken, {
       type: "text",
-      text: `ทักแอดมินน่ะค่ะ line@ ของแอดมิน: ${LINE_AT_ID}`,
+      text: `ทักแอดมินน่ะค่ะ line ของแอดมิน: ${LINE_AT_ID}`,
     });
     await client.pushMessage(ADMIN_LINE_ID, {
       type: "text",
