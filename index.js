@@ -26,6 +26,7 @@ const client = new line.Client(config);
 const app = express();
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
+// ฟังก์ชันบันทึกสมาชิกใหม่
 async function saveNewMember(userId, displayName, groupId) {
   try {
     await doc.loadInfo();
@@ -44,6 +45,7 @@ async function saveNewMember(userId, displayName, groupId) {
   }
 }
 
+// ระบบตรวจสอบอายุสมาชิก (แจ้งเตือนวันที่ 27-30)
 cron.schedule("0 9 * * *", async () => {
   console.log("🏃 กำลังตรวจสอบรายชื่อสมาชิก...");
   try {
@@ -117,59 +119,44 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const groupId = event.source.groupId;
 
+  // --- ส่วนที่ปรับปรุง: ต้อนรับทุกคนและบันทึกลง Sheet ทันที ---
   if (event.type === "memberJoined") {
     for (let member of event.joined.members) {
-      const uId = member.userId;
       try {
-        await doc.loadInfo();
+        const profile = await client.getGroupMemberProfile(
+          groupId,
+          member.userId,
+        );
 
-        // --- ส่วนดึงรูปจาก Sheet 'Config' ---
-        const configSheet = doc.sheetsByTitle["Config"]; // ดึงข้อมูลจากหน้า Config
+        // 1. บันทึกข้อมูลคนเข้าใหม่ลง Sheet ทันที
+        await saveNewMember(member.userId, profile.displayName, groupId);
+
+        // 2. ดึงรูปจาก Sheet 'Config' ช่อง B1
+        await doc.loadInfo();
+        const configSheet = doc.sheetsByTitle["Config"];
         let welcomeImageUrl = "";
         if (configSheet) {
-          await configSheet.loadCells("B1"); // อ่านช่อง B1
+          await configSheet.loadCells("B1");
           welcomeImageUrl = configSheet.getCellByA1("B1").value;
         }
 
-        const sheet = doc.sheetsByIndex[0];
-        const rows = await sheet.getRows();
-        const isMember = rows.find(
-          (row) => row.get("User ID") === uId && row.get("Status") === "Active",
-        );
-
-        if (isMember) {
-          const profile = await client.getGroupMemberProfile(groupId, uId);
-
-          // เตรียมส่งข้อความ (รูปภาพ + ข้อความ)
-          const messages = [];
-
-          // ถ้าใน Sheet มีลิงก์รูป ให้ส่งรูปด้วย
-          if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
-            messages.push({
-              type: "image",
-              originalContentUrl: welcomeImageUrl,
-              previewImageUrl: welcomeImageUrl,
-            });
-          }
-
+        const messages = [];
+        // ถ้ามีลิงก์รูปใน B1 ให้ใส่รูปเข้าไปในข้อความตอบกลับ
+        if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
           messages.push({
-            type: "text",
-            text: `ยินดีต้อนรับคุณ ${profile.displayName} เข้าสู่กลุ่มครับ! ✅ ตรวจสอบสิทธิ์เรียบร้อย ขอให้มีความสุขน่ะค่ะ`,
-          });
-
-          await client.replyMessage(event.replyToken, messages);
-        } else {
-          // --- กรณีคนแอบเข้า (ไม่มีชื่อในระบบ) ---
-          await client.pushMessage(groupId, {
-            type: "text",
-            text: `⚠️ ตรวจพบคนแอบเข้ากลุ่มโดยไม่ได้รับอนุญาต!\nID: ${uId}\nระบบกำลังแจ้งแอดมินให้ดำเนินการเตะออกภายใน 1 นาทีครับ`,
-          });
-
-          await client.pushMessage(ADMIN_LINE_ID, {
-            type: "text",
-            text: `🚨 [คนแอบเข้า] มีคนแอบเข้ากลุ่มโดยไม่มีสิทธิ์!\nGroupID: ${groupId}\nUserID: ${uId}\nกรุณาเตะออกด่วนครับ!`,
+            type: "image",
+            originalContentUrl: welcomeImageUrl,
+            previewImageUrl: welcomeImageUrl,
           });
         }
+
+        // 3. ส่งข้อความต้อนรับ
+        messages.push({
+          type: "text",
+          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ ระบบได้บันทึกข้อมูลสมาชิกเรียบร้อยแล้วค่ะ`,
+        });
+
+        await client.replyMessage(event.replyToken, messages);
       } catch (err) {
         console.error("Member Join Error:", err);
       }
@@ -183,11 +170,10 @@ async function handleEvent(event) {
     });
   }
 
-  // --- ส่วนที่ปรับปรุง: รองรับริชเมนู 3 ปุ่ม ---
   if (event.type === "message" && event.message.type === "text") {
     const userMsg = event.message.text;
 
-    if (userMsg === "สนใจ") {
+    if (userMsg === "สนใจ" || userMsg === "ช่องทางชำระเงิน") {
       await client.replyMessage(event.replyToken, {
         type: "text",
         text: "ขอบคุณที่สนใจครับพี่! กลุ่มของเรามีสาวๆ ไลฟ์สดให้ดูทุกวัน\nสมัครวันนี้ดูได้ทันทีครับ\n🏦 ช่องทางโอนเงิน\nธนาคาร: กสิกรไทย\nเลขบัญชี: xxx-x-xxxxx-x\nชื่อบัญชี: xxxxxxxx\n\nโอนแล้วส่งสลิปไว้ได้เลยค่ะ",
@@ -197,13 +183,7 @@ async function handleEvent(event) {
         type: "text",
         text: `ทักหาแอดมินได้เลยที่นี่ค่ะ: ${LINE_AT_ID}\nหรือรอสักครู่ เดี๋ยวแอดมินทักกลับไปค่ะ`,
       });
-    } else if (userMsg === "ช่องทางชำระเงิน") {
-      await client.replyMessage(event.replyToken, {
-        type: "text",
-        text: "🏦 ช่องทางโอนเงิน\nธนาคาร: กสิกรไทย\nเลขบัญชี: xxx-x-xxxxx-x\nชื่อบัญชี: xxxxxxxx\n\nโอนแล้วส่งสลิปไว้ได้เลยค่ะ",
-      });
     } else {
-      // กรณีเป็นข้อความอื่นๆ ให้แจ้งแอดมินเหมือนเดิม
       if (userId === ADMIN_LINE_ID) return null;
       let name = "สมาชิก";
       try {
