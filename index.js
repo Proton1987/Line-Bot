@@ -60,8 +60,9 @@ cron.schedule("0 9 * * *", async () => {
         const uName = row.get("Display Name");
         const gId = row.get("Group ID");
 
-        if (daysDiff === 27) {
-          const msg = `📢 แจ้งเตือนคุณ ${uName}\nอีก 3 วันสมาชิกจะหมดอายุครับ!`;
+        if (daysDiff >= 27 && daysDiff < 30) {
+          const remainDays = 30 - daysDiff;
+          const msg = `📢 แจ้งเตือนคุณ ${uName}\nอีก ${remainDays} วันสมาชิกจะหมดอายุครับ! อย่าลืมต่ออายุนะครับ`;
           try {
             await client.pushMessage(uId, { type: "text", text: msg });
           } catch (e) {}
@@ -69,13 +70,13 @@ cron.schedule("0 9 * * *", async () => {
             try {
               await client.pushMessage(gId, {
                 type: "text",
-                text: `🔔 คุณ ${uName} เหลือเวลาอีก 3 วันครับ`,
+                text: `🔔 ${uName} เหลือเวลาสมาชิกอีก ${remainDays} วันครับ`,
               });
             } catch (e) {}
           }
           await client.pushMessage(ADMIN_LINE_ID, {
             type: "text",
-            text: `[ใกล้หมดอายุ] คุณ ${uName} (3 วัน)`,
+            text: `[ใกล้หมดอายุ] ${uName} (เหลือ ${remainDays} วัน)`,
           });
         }
 
