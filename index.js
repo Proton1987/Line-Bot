@@ -177,7 +177,8 @@ async function handleEvent(event) {
   }
 }
 
-const PORT = 3000;
-app.listen(PORT, () =>
-  console.log(`🚀 ระบบ Full System พร้อมทำงานที่พอร์ต ${PORT}`),
-);
+// แก้จาก const PORT = 3000;
+const PORT = process.env.PORT || 3000; // ให้ใช้ Port ที่ Render กำหนดมาให้
+app.listen(PORT, () => {
+  console.log(`🚀 ระบบพร้อมทำงานที่พอร์ต ${PORT}`);
+});
