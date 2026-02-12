@@ -6,28 +6,26 @@ const moment = require("moment");
 const cron = require("node-cron");
 
 const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, // ดึงจาก Cloud
-  channelSecret: process.env.CHANNEL_SECRET, // ดึงจาก Cloud
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.CHANNEL_SECRET,
 };
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
+const LINE_AT_ID = "@Wash";
 
-// ส่วนของ Google Auth ให้แก้เป็นแบบนี้เพื่อความง่ายบน Cloud
+// --- ใช้แค่ชุดนี้ชุดเดียว (สำหรับ Cloud) ---
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"), // แก้เรื่องบรรทัดใหม่
+  // แก้ไขเรื่อง \n ให้รองรับทั้งแบบพิมพ์ตรงและตัวแปรระบบ
+  key: process.env.GOOGLE_PRIVATE_KEY
+    ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n")
+    : undefined,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
 const client = new line.Client(config);
 const app = express();
-
-const serviceAccountAuth = new JWT({
-  email: require("./google-key.json").client_email,
-  key: require("./google-key.json").private_key,
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
 // 1. ฟังก์ชันบันทึกสมาชิกใหม่
@@ -49,8 +47,7 @@ async function saveNewMember(userId, displayName, groupId) {
   }
 }
 
-// 2. ระบบตรวจสอบอายุสมาชิก (รันทุกวันเวลา 09:00 น.)
-// เปลี่ยนเป็น "* * * * *" เพื่อทดสอบได้ครับ
+// 2. ระบบตรวจสอบอายุสมาชิก
 cron.schedule("* * * * *", async () => {
   console.log("🏃 กำลังตรวจสอบรายชื่อสมาชิก...");
   try {
@@ -67,7 +64,6 @@ cron.schedule("* * * * *", async () => {
         const uName = row.get("Display Name");
         const gId = row.get("Group ID");
 
-        // --- วันที่ 27: แจ้งเตือนล่วงหน้า ---
         if (daysDiff === 27) {
           const msg = `📢 แจ้งเตือนคุณ ${uName}\nอีก 3 วันสมาชิกจะหมดอายุครับ!`;
           try {
@@ -87,13 +83,11 @@ cron.schedule("* * * * *", async () => {
           });
         }
 
-        // --- วันที่ 30: แจ้งเตือนให้แอดมินเตะ + ลบข้อมูล ---
         if (daysDiff >= 30) {
           const expireMsg = `🚫 หมดเวลาสมาชิกแล้วครับคุณ ${uName}\nขอบคุณที่อยู่ด้วยกันนะครับ`;
           try {
             await client.pushMessage(uId, { type: "text", text: expireMsg });
           } catch (e) {}
-
           if (gId) {
             try {
               await client.pushMessage(gId, {
@@ -102,14 +96,10 @@ cron.schedule("* * * * *", async () => {
               });
             } catch (e) {}
           }
-
-          // แจ้งแอดมินให้มาเตะออก
           await client.pushMessage(ADMIN_LINE_ID, {
             type: "text",
             text: `🚨 [หมดอายุ] กรุณาเตะออก 🚨\n👤 ชื่อ: ${uName}\n🆔 ID: ${uId}\n(ระบบลบข้อมูลใน Sheet แล้ว)`,
           });
-
-          // ลบแถวออกจาก Google Sheets ทันที
           await row.delete();
           console.log(`🗑 ลบข้อมูล ${uName} เรียบร้อย`);
         }
@@ -120,7 +110,7 @@ cron.schedule("* * * * *", async () => {
   }
 });
 
-app.post("/webhook", line.middleware(config), (req, res) => {
+app.post("/webhook", express.json(), line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent)).then((result) =>
     res.json(result),
   );
@@ -130,7 +120,6 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const groupId = event.source.groupId;
 
-  // เมื่อมีคนเข้ากลุ่ม
   if (event.type === "memberJoined") {
     for (let member of event.joined.members) {
       try {
@@ -149,7 +138,6 @@ async function handleEvent(event) {
     }
   }
 
-  // เมื่อบอทถูกเชิญเข้ากลุ่มใหม่
   if (event.type === "join") {
     await client.replyMessage(event.replyToken, {
       type: "text",
@@ -157,7 +145,6 @@ async function handleEvent(event) {
     });
   }
 
-  // เมื่อคนทักข้อความ
   if (event.type === "message" && event.message.type === "text") {
     if (userId === ADMIN_LINE_ID) return null;
     let name = "สมาชิก";
@@ -165,7 +152,6 @@ async function handleEvent(event) {
       const p = await client.getGroupMemberProfile(groupId, userId);
       name = p.displayName;
     } catch (e) {}
-
     await client.replyMessage(event.replyToken, {
       type: "text",
       text: `ทักแอดมินน่ะค่ะ line@ ของแอดมิน: ${LINE_AT_ID}`,
@@ -177,8 +163,7 @@ async function handleEvent(event) {
   }
 }
 
-// แก้จาก const PORT = 3000;
-const PORT = process.env.PORT || 3000; // ให้ใช้ Port ที่ Render กำหนดมาให้
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 ระบบพร้อมทำงานที่พอร์ต ${PORT}`);
 });
