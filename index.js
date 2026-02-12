@@ -119,18 +119,59 @@ async function handleEvent(event) {
 
   if (event.type === "memberJoined") {
     for (let member of event.joined.members) {
+      const uId = member.userId;
       try {
-        const profile = await client.getGroupMemberProfile(
-          groupId,
-          member.userId,
+        await doc.loadInfo();
+
+        // --- ส่วนดึงรูปจาก Sheet 'Config' ---
+        const configSheet = doc.sheetsByTitle["Config"]; // ดึงข้อมูลจากหน้า Config
+        let welcomeImageUrl = "";
+        if (configSheet) {
+          await configSheet.loadCells("B1"); // อ่านช่อง B1
+          welcomeImageUrl = configSheet.getCellByA1("B1").value;
+        }
+
+        const sheet = doc.sheetsByIndex[0];
+        const rows = await sheet.getRows();
+        const isMember = rows.find(
+          (row) => row.get("User ID") === uId && row.get("Status") === "Active",
         );
-        await saveNewMember(member.userId, profile.displayName, groupId);
-        await client.replyMessage(event.replyToken, {
-          type: "text",
-          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ`,
-        });
+
+        if (isMember) {
+          const profile = await client.getGroupMemberProfile(groupId, uId);
+
+          // เตรียมส่งข้อความ (รูปภาพ + ข้อความ)
+          const messages = [];
+
+          // ถ้าใน Sheet มีลิงก์รูป ให้ส่งรูปด้วย
+          if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
+            messages.push({
+              type: "image",
+              originalContentUrl: welcomeImageUrl,
+              previewImageUrl: welcomeImageUrl,
+            });
+          }
+
+          messages.push({
+            type: "text",
+            text: `ยินดีต้อนรับคุณ ${profile.displayName} เข้าสู่กลุ่มครับ! ✅ ตรวจสอบสิทธิ์เรียบร้อย ขอให้มีความสุขน่ะค่ะ`,
+          });
+
+          await client.replyMessage(event.replyToken, messages);
+        } else {
+          // --- กรณีคนแอบเข้า (ไม่มีชื่อในระบบ) ---
+          await client.pushMessage(groupId, {
+            type: "text",
+            text: `⚠️ ตรวจพบคนแอบเข้ากลุ่มโดยไม่ได้รับอนุญาต!\nID: ${uId}\nระบบกำลังแจ้งแอดมินให้ดำเนินการเตะออกภายใน 1 นาทีครับ`,
+          });
+
+          await client.pushMessage(ADMIN_LINE_ID, {
+            type: "text",
+            text: `🚨 [คนแอบเข้า] มีคนแอบเข้ากลุ่มโดยไม่มีสิทธิ์!\nGroupID: ${groupId}\nUserID: ${uId}\nกรุณาเตะออกด่วนครับ!`,
+          });
+        }
       } catch (err) {
-        console.error(err);
+        console.error("Member Join Error:", err);
       }
     }
   }
