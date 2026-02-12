@@ -128,23 +128,21 @@ async function handleEvent(event) {
           member.userId,
         );
 
-        // 1. บันทึกข้อมูลคนเข้าใหม่ลง Sheet หน้าแรก (ดึงตามลำดับ index 0)
+        // 1. บันทึกสมาชิกใหม่ลงหน้าแรก (ชีต1)
         await saveNewMember(member.userId, profile.displayName, groupId);
 
-        // 2. ดึงรูปจาก Sheet 'Config'
+        // 2. ดึงรูปจากช่อง F1 ในหน้าแรกทันที
         await doc.loadInfo();
-        const configSheet = doc.sheetsByTitle["Config"];
-        let welcomeImageUrl = "";
+        const sheet = doc.sheetsByIndex[0]; // เจาะจงหน้าแรกหน้าเดียว
+        await sheet.loadCells("F1"); // โหลดช่อง F1
+        const welcomeImageUrl = sheet.getCellByA1("F1").value
+          ? sheet.getCellByA1("F1").value.toString().trim()
+          : "";
 
-        if (configSheet) {
-          // โหลดเฉพาะช่อง B1 มาใช้งาน
-          await configSheet.loadCells("B1");
-          const cellB1 = configSheet.getCellByA1("B1");
-          welcomeImageUrl = cellB1.value ? cellB1.value.toString().trim() : "";
-        }
+        console.log(`📸 ดึงรูปจากหน้าเดียว (F1): ${welcomeImageUrl}`);
 
         const messages = [];
-        // ตรวจสอบว่าลิงก์ใน B1 เป็นลิงก์รูปภาพที่ใช้งานได้จริง (ต้องขึ้นด้วย http)
+        // ถ้ามีลิ้งค์รูปใน F1 ให้ส่งรูปด้วย
         if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
           messages.push({
             type: "image",
@@ -153,10 +151,9 @@ async function handleEvent(event) {
           });
         }
 
-        // 3. ส่งข้อความต้อนรับ
         messages.push({
           type: "text",
-          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ ระบบได้บันทึกข้อมูลสมาชิกเรียบร้อยแล้วค่ะ`,
+          text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ ระบบบันทึกข้อมูลแล้วค่ะ`,
         });
 
         await client.replyMessage(event.replyToken, messages);
