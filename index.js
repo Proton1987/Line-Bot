@@ -6,14 +6,19 @@ const moment = require("moment");
 const cron = require("node-cron");
 
 const config = {
-  channelAccessToken:
-    "6PTrfzoWNNf3GuMXFr7/61+Thy+i6VMgNj1k82nxRll3Xt6Rkaw3I/xpfe9qJi7z+em998RCobx+GoR+Hvd6+tQXRy7fUY9BsNJ7UbzTb+BFdt7nvJIwidOZg8I3tczitcW98JJiCobXAkDW872CqwdB04t89/1O/w1cDnyilFU=",
-  channelSecret: "ceb80c32c24352711a81bd3ea9536c95",
+  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN, // ดึงจาก Cloud
+  channelSecret: process.env.CHANNEL_SECRET, // ดึงจาก Cloud
 };
 
-const SPREADSHEET_ID = "1gowK2tcAR59pUBJWFR3agqyYXlqaGpT4E67DEM7vK1A";
-const ADMIN_LINE_ID = "Uc53199f09eca8e3daa7b75c7e12f1c1f";
-const LINE_AT_ID = "@Wash";
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
+
+// ส่วนของ Google Auth ให้แก้เป็นแบบนี้เพื่อความง่ายบน Cloud
+const serviceAccountAuth = new JWT({
+  email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"), // แก้เรื่องบรรทัดใหม่
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+});
 
 const client = new line.Client(config);
 const app = express();
