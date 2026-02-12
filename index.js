@@ -131,32 +131,48 @@ async function handleEvent(event) {
         // 1. บันทึกสมาชิกใหม่ลงหน้าแรก (ชีต1)
         await saveNewMember(member.userId, profile.displayName, groupId);
 
-        // 2. ดึงรูปจากช่อง F1 ในหน้าแรกทันที
+        // 2. ดึงรูปจากหน้าแรก (ช่อง F1 และ G1)
         await doc.loadInfo();
-        const sheet = doc.sheetsByIndex[0]; // เจาะจงหน้าแรกหน้าเดียว
-        await sheet.loadCells("F1"); // โหลดช่อง F1
-        const welcomeImageUrl = sheet.getCellByA1("F1").value
+        const sheet = doc.sheetsByIndex[0];
+        await sheet.loadCells("F1:G1"); // โหลดรวดเดียว 2 ช่อง
+
+        const imgLink1 = sheet.getCellByA1("F1").value
           ? sheet.getCellByA1("F1").value.toString().trim()
           : "";
-
-        console.log(`📸 ดึงรูปจากหน้าเดียว (F1): ${welcomeImageUrl}`);
+        const imgLink2 = sheet.getCellByA1("G1").value
+          ? sheet.getCellByA1("G1").value.toString().trim()
+          : "";
 
         const messages = [];
-        // ถ้ามีลิ้งค์รูปใน F1 ให้ส่งรูปด้วย
-        if (welcomeImageUrl && welcomeImageUrl.startsWith("http")) {
+
+        // เช็คและเพิ่มรูปที่ 1
+        if (imgLink1 && imgLink1.startsWith("http")) {
           messages.push({
             type: "image",
-            originalContentUrl: welcomeImageUrl,
-            previewImageUrl: welcomeImageUrl,
+            originalContentUrl: imgLink1,
+            previewImageUrl: imgLink1,
           });
         }
 
+        // เช็คและเพิ่มรูปที่ 2 (รูปใหม่ที่พี่ต้องการ)
+        if (imgLink2 && imgLink2.startsWith("http")) {
+          messages.push({
+            type: "image",
+            originalContentUrl: imgLink2,
+            previewImageUrl: imgLink2,
+          });
+        }
+
+        // 3. ส่งข้อความต้อนรับปิดท้าย
         messages.push({
           type: "text",
           text: `ยินดีต้อนรับคุณ ${profile.displayName}! ขอให้มีความสุขน่ะค่ะ ระบบบันทึกข้อมูลแล้วค่ะ`,
         });
 
         await client.replyMessage(event.replyToken, messages);
+        console.log(
+          `✅ ส่งรูปต้อนรับ 2 รูปให้คุณ ${profile.displayName} เรียบร้อย`,
+        );
       } catch (err) {
         console.error("Member Join Error:", err);
       }
