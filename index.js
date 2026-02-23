@@ -157,14 +157,31 @@ async function handleEvent(event) {
         text: contactText,
       });
     } else {
+      // --- ส่วนที่ดึงชื่อกลับมา ---
       if (userId === ADMIN_LINE_ID) return null;
+
+      let name = "สมาชิก"; // ค่าเริ่มต้นถ้าดึงชื่อไม่ได้
+      try {
+        if (groupId) {
+          const p = await client.getGroupMemberProfile(groupId, userId);
+          name = p.displayName;
+        } else {
+          const p = await client.getProfile(userId);
+          name = p.displayName;
+        }
+      } catch (e) {
+        console.log("ดึงชื่อไม่ได้:", e.message);
+      }
+
       await client.replyMessage(event.replyToken, {
         type: "text",
         text: contactText,
       });
+
+      // ส่งหาแอดมินพร้อมชื่อและข้อความ
       await client.pushMessage(ADMIN_LINE_ID, {
         type: "text",
-        text: `📢 มีคนทักจากกลุ่ม!\n💬: ${userMsg}`,
+        text: `📢 มีคนทักจากกลุ่ม!\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
       });
     }
   }
