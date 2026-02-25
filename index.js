@@ -25,6 +25,11 @@ const client = new line.Client(config);
 const app = express();
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
+// ✅ แก้จุดนี้: ใช้ Path /ping สำหรับเว็บปลุกโดยเฉพาะ (ไม่ต้องผ่าน line.middleware)
+app.get("/ping", (req, res) => {
+  res.status(200).send("Bot is Awake!");
+});
+
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
@@ -82,19 +87,19 @@ cron.schedule("0 9 * * *", async () => {
   }
 });
 
+// ✅ Webhook ของ LINE จะรับเฉพาะข้อมูลจาก LINE จริงๆ เท่านั้น
 app.post("/webhook", line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
     .catch((err) => {
+      // ถ้า Error ตรงนี้ แสดงว่าค่า Config (Secret/Token) ของพี่มีปัญหา
       res.status(500).end();
     });
 });
 
 async function handleEvent(event) {
-  // ✅ ดักจับข้อมูลที่ไม่ใช่ของ LINE (เช่น จากเว็บปลุก) เพื่อไม่ให้ระบบ Processing Error
-  if (!event || !event.type || !event.source || !event.source.userId) {
-    return null;
-  }
+  // กรองเฉพาะ Event ที่มีข้อมูลครบถ้วน
+  if (!event || !event.source || !event.source.userId) return null;
 
   const userId = event.source.userId;
   const groupId = event.source.groupId;
@@ -113,7 +118,6 @@ async function handleEvent(event) {
 
         await doc.loadInfo();
         const sheet = doc.sheetsByIndex[0];
-        // โหลดตั้งแต่ A1 เพื่อให้ครอบคลุมทั้งระบบสมาชิกและรูปต้อนรับ
         await sheet.loadCells("A1:K1");
 
         const img1 = sheet.getCellByA1("F1").value;
@@ -141,7 +145,6 @@ async function handleEvent(event) {
     try {
       await doc.loadInfo();
       const sheet = doc.sheetsByIndex[0];
-      // โหลดตั้งแต่ A1:K1 เพื่อให้ครอบคลุมเงื่อนไข K1 ของพี่
       await sheet.loadCells("A1:K1");
 
       const payTxt = (sheet.getCellByA1("I1").value || "รอแอดมินแจ้งนะคะ").toString().trim();
@@ -150,7 +153,6 @@ async function handleEvent(event) {
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
-          // ตอบกลับในกลุ่มด้วยค่าจาก K1
           await client.replyMessage(event.replyToken, { type: "text", text: groupRes }).catch(() => {});
         }
       } else {
