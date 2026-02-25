@@ -31,7 +31,6 @@ app.get("/", (req, res) => {
 
 async function saveNewMember(userId, displayName, groupId) {
   try {
-    console.log(`📝 กำลังบันทึกสมาชิก: ${displayName} (${userId})`);
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
     await sheet.addRow({
@@ -41,14 +40,12 @@ async function saveNewMember(userId, displayName, groupId) {
       Status: "Active",
       "Group ID": groupId || "Direct Message",
     });
-    console.log("✅ บันทึกลง Sheet สำเร็จ!");
   } catch (err) {
-    console.error("❌ Sheet Save Error:", err.message);
+    console.error("Sheet Save Error");
   }
 }
 
 cron.schedule("0 9 * * *", async () => {
-  console.log("⏰ เริ่มระบบตรวจสอบอายุสมาชิกรายวัน...");
   try {
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
@@ -81,26 +78,21 @@ cron.schedule("0 9 * * *", async () => {
       }
     }
   } catch (err) {
-    console.error("❌ Cron Error:", err.message);
+    console.error("Cron Error");
   }
 });
 
 app.post("/webhook", line.middleware(config), (req, res) => {
-  console.log("📩 มี Webhook เข้ามา...");
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
     .catch((err) => {
-      console.error("❌ Webhook Middleware Error:", err.message);
       res.status(500).end();
     });
 });
 
 async function handleEvent(event) {
-  // 🔍 บรรทัดนี้จะบอกว่า LINE ส่งอะไรมาให้เราบ้าง (สำคัญมาก)
-  console.log("📦 ข้อมูลดิบจาก Webhook:", JSON.stringify(event));
-
-  if (!event.source) {
-    console.log("⚠️ Event นี้ไม่มี source");
+  // ✅ ดักจับข้อมูลที่ไม่ใช่ของ LINE (เช่น จากเว็บปลุก) เพื่อไม่ให้ระบบ Processing Error
+  if (!event || !event.type || !event.source || !event.source.userId) {
     return null;
   }
 
@@ -108,26 +100,20 @@ async function handleEvent(event) {
   const groupId = event.source.groupId;
   const isGroup = !!groupId;
 
-  // 1. กรณีคนเข้ากลุ่ม
   if (event.type === "memberJoined") {
-    console.log(`🆕 ตรวจพบ Event: memberJoined ในกลุ่ม ${groupId}`);
     for (let member of event.joined.members) {
       try {
-        console.log(`🔍 กำลังดึงโปรไฟล์ User: ${member.userId}`);
         let displayName = "สมาชิกใหม่";
         try {
           const profile = await client.getGroupMemberProfile(groupId, member.userId);
           displayName = profile.displayName;
-          console.log(`👤 ชื่อที่ดึงได้: ${displayName}`);
-        } catch (e) {
-          console.log("⚠️ ดึงโปรไฟล์ล้มเหลว (อาจยังไม่แอดเพื่อน)");
-        }
+        } catch (e) {}
 
         await saveNewMember(member.userId, displayName, groupId);
 
         await doc.loadInfo();
         const sheet = doc.sheetsByIndex[0];
-        console.log("📄 กำลังโหลด Cells A1:K1...");
+        // โหลดตั้งแต่ A1 เพื่อให้ครอบคลุมทั้งระบบสมาชิกและรูปต้อนรับ
         await sheet.loadCells("A1:K1");
 
         const img1 = sheet.getCellByA1("F1").value;
@@ -143,47 +129,44 @@ async function handleEvent(event) {
         }
         messages.push({ type: "text", text: `สวัสดีคุณ ${displayName} ${welTxt}` });
 
-        console.log("📤 กำลังส่งข้อความตอบกลับกลุ่ม...");
-        await client.replyMessage(event.replyToken, messages);
-        console.log("✨ ส่งสำเร็จ!");
+        await client.replyMessage(event.replyToken, messages).catch(() => {});
       } catch (err) {
-        console.error("❌ Joined Event Error:", err.message);
+        console.error("Joined Event Error");
       }
     }
   }
 
-  // 2. กรณีส่งข้อความ
   if (event.type === "message" && event.message.type === "text") {
     const userMsg = event.message.text;
-    console.log(`💬 ตรวจพบข้อความ: "${userMsg}" จาก ${isGroup ? 'กลุ่ม' : 'ส่วนตัว'}`);
-    
     try {
       await doc.loadInfo();
       const sheet = doc.sheetsByIndex[0];
+      // โหลดตั้งแต่ A1:K1 เพื่อให้ครอบคลุมเงื่อนไข K1 ของพี่
       await sheet.loadCells("A1:K1");
 
-      const payTxt = sheet.getCellByA1("I1").value || "รอแอดมินแจ้งนะคะ";
-      const conTxt = sheet.getCellByA1("J1").value || "รอสักครู่นะคะ";
-      const groupRes = sheet.getCellByA1("K1").value || "ทักแอดมินไวกว่านะคะพี่ 🙏";
+      const payTxt = (sheet.getCellByA1("I1").value || "รอแอดมินแจ้งนะคะ").toString().trim();
+      const conTxt = (sheet.getCellByA1("J1").value || "รอสักครู่นะคะ").toString().trim();
+      const groupRes = (sheet.getCellByA1("K1").value || "ทักแอดมินไวกว่านะคะพี่ 🙏").toString().trim();
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
-          console.log("🤖 กำลังตอบกลับในกลุ่ม...");
-          await client.replyMessage(event.replyToken, { type: "text", text: groupRes.toString() });
+          // ตอบกลับในกลุ่มด้วยค่าจาก K1
+          await client.replyMessage(event.replyToken, { type: "text", text: groupRes }).catch(() => {});
         }
       } else {
-        if (userMsg === "สนใจ" || userMsg === "ช่องทางชำระเงิน") {
-          console.log("🤖 ตอบเรื่องเงิน...");
-          await client.replyMessage(event.replyToken, { type: "text", text: payTxt.toString() });
+        const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี/g;
+        const cleanMsg = userMsg.trim(); 
+
+        if (payKeyword.test(cleanMsg)) {
+          await client.replyMessage(event.replyToken, { type: "text", text: payTxt }).catch(() => {});
         } else {
-          if (userId === ADMIN_LINE_ID) return null;
-          console.log("🤖 ตอบเรื่องติดต่อแอดมิน...");
-          await client.replyMessage(event.replyToken, { type: "text", text: conTxt.toString() });
+          if (userId !== ADMIN_LINE_ID) {
+            await client.replyMessage(event.replyToken, { type: "text", text: conTxt }).catch(() => {});
+          }
         }
       }
 
       if (userId !== ADMIN_LINE_ID && ADMIN_LINE_ID) {
-        console.log("📢 ส่งแจ้งเตือนแอดมิน...");
         let name = "สมาชิก";
         try {
           const p = isGroup ? await client.getGroupMemberProfile(groupId, userId) : await client.getProfile(userId);
@@ -192,10 +175,10 @@ async function handleEvent(event) {
         await client.pushMessage(ADMIN_LINE_ID, {
           type: "text",
           text: `📢 มีคนทัก (${isGroup ? 'ในกลุ่ม' : 'ส่วนตัว'})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
-        });
+        }).catch(() => {});
       }
     } catch (err) {
-      console.error("❌ Message Processing Error:", err.message);
+      console.error("Message Processing Error");
     }
   }
 }
