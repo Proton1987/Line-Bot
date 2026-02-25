@@ -96,7 +96,13 @@ app.post("/webhook", line.middleware(config), (req, res) => {
 });
 
 async function handleEvent(event) {
-  if (!event.source || !event.source.userId) return null;
+  // 🔍 บรรทัดนี้จะบอกว่า LINE ส่งอะไรมาให้เราบ้าง (สำคัญมาก)
+  console.log("📦 ข้อมูลดิบจาก Webhook:", JSON.stringify(event));
+
+  if (!event.source) {
+    console.log("⚠️ Event นี้ไม่มี source");
+    return null;
+  }
 
   const userId = event.source.userId;
   const groupId = event.source.groupId;
@@ -104,24 +110,24 @@ async function handleEvent(event) {
 
   // 1. กรณีคนเข้ากลุ่ม
   if (event.type === "memberJoined") {
-    console.log(`🆕 พบสมาชิกเข้ากลุ่ม: ${groupId}`);
+    console.log(`🆕 ตรวจพบ Event: memberJoined ในกลุ่ม ${groupId}`);
     for (let member of event.joined.members) {
       try {
+        console.log(`🔍 กำลังดึงโปรไฟล์ User: ${member.userId}`);
         let displayName = "สมาชิกใหม่";
         try {
-          console.log(`🔍 กำลังดึงโปรไฟล์ของ: ${member.userId}`);
           const profile = await client.getGroupMemberProfile(groupId, member.userId);
           displayName = profile.displayName;
           console.log(`👤 ชื่อที่ดึงได้: ${displayName}`);
         } catch (e) {
-          console.log("⚠️ ดึงโปรไฟล์ไม่สำเร็จ (อาจยังไม่ได้แอดเพื่อน)");
+          console.log("⚠️ ดึงโปรไฟล์ล้มเหลว (อาจยังไม่แอดเพื่อน)");
         }
 
         await saveNewMember(member.userId, displayName, groupId);
 
         await doc.loadInfo();
         const sheet = doc.sheetsByIndex[0];
-        console.log("📄 กำลังโหลด Cells A1:K1 เพื่อดึงข้อมูลต้อนรับ...");
+        console.log("📄 กำลังโหลด Cells A1:K1...");
         await sheet.loadCells("A1:K1");
 
         const img1 = sheet.getCellByA1("F1").value;
@@ -137,9 +143,9 @@ async function handleEvent(event) {
         }
         messages.push({ type: "text", text: `สวัสดีคุณ ${displayName} ${welTxt}` });
 
-        console.log("📤 กำลังส่งข้อความต้อนรับ...");
+        console.log("📤 กำลังส่งข้อความตอบกลับกลุ่ม...");
         await client.replyMessage(event.replyToken, messages);
-        console.log("✨ ส่งข้อความต้อนรับสำเร็จ!");
+        console.log("✨ ส่งสำเร็จ!");
       } catch (err) {
         console.error("❌ Joined Event Error:", err.message);
       }
@@ -149,7 +155,8 @@ async function handleEvent(event) {
   // 2. กรณีส่งข้อความ
   if (event.type === "message" && event.message.type === "text") {
     const userMsg = event.message.text;
-    console.log(`💬 ข้อความจาก ${isGroup ? 'กลุ่ม' : 'ส่วนตัว'}: ${userMsg}`);
+    console.log(`💬 ตรวจพบข้อความ: "${userMsg}" จาก ${isGroup ? 'กลุ่ม' : 'ส่วนตัว'}`);
+    
     try {
       await doc.loadInfo();
       const sheet = doc.sheetsByIndex[0];
@@ -161,31 +168,27 @@ async function handleEvent(event) {
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
-          console.log("🤖 ตอบกลับอัตโนมัติในกลุ่ม (K1)");
+          console.log("🤖 กำลังตอบกลับในกลุ่ม...");
           await client.replyMessage(event.replyToken, { type: "text", text: groupRes.toString() });
         }
       } else {
         if (userMsg === "สนใจ" || userMsg === "ช่องทางชำระเงิน") {
-          console.log("🤖 ตอบกลับเลขบัญชี (I1)");
+          console.log("🤖 ตอบเรื่องเงิน...");
           await client.replyMessage(event.replyToken, { type: "text", text: payTxt.toString() });
-        } else if (userMsg === "ติดต่อแอดมิด") {
-          console.log("🤖 ตอบกลับติดต่อแอดมิน (J1)");
-          await client.replyMessage(event.replyToken, { type: "text", text: conTxt.toString() });
         } else {
           if (userId === ADMIN_LINE_ID) return null;
-          console.log("🤖 ตอบกลับ Default (J1)");
+          console.log("🤖 ตอบเรื่องติดต่อแอดมิน...");
           await client.replyMessage(event.replyToken, { type: "text", text: conTxt.toString() });
         }
       }
 
       if (userId !== ADMIN_LINE_ID && ADMIN_LINE_ID) {
-        console.log("📢 กำลังส่งแจ้งเตือนหาแอดมิน...");
+        console.log("📢 ส่งแจ้งเตือนแอดมิน...");
         let name = "สมาชิก";
         try {
           const p = isGroup ? await client.getGroupMemberProfile(groupId, userId) : await client.getProfile(userId);
           name = p.displayName;
         } catch (e) {}
-
         await client.pushMessage(ADMIN_LINE_ID, {
           type: "text",
           text: `📢 มีคนทัก (${isGroup ? 'ในกลุ่ม' : 'ส่วนตัว'})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
