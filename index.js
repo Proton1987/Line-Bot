@@ -25,22 +25,19 @@ const client = new line.Client(config);
 const app = express();
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
-// ------------------------------------------
-// 🚀 ประตูสำหรับเว็บปลุก
-// ------------------------------------------
+// ช่องทางสำหรับเว็บปลุก แยกต่างหาก (แก้ URL ในเว็บปลุกเป็น https://.../wake-up)
 app.get("/wake-up", (req, res) => {
-  console.log("⏰ [Cron-Job] ได้รับสัญญาณปลุกบอทผ่าน /wake-up");
-  res.status(200).send("Bot is Awake! (Internal Wake Up)");
+  console.log("⏰ [Cron-Job] สัญญาณปลุกบอทมาแล้ว");
+  res.status(200).send("Awake!");
 });
 
 app.get("/", (req, res) => {
-  console.log("🌐 [Ping] มีคนเข้าหน้าแรก (Root Path)");
   res.status(200).send("OK");
 });
 
 async function saveNewMember(userId, displayName, groupId) {
   try {
-    console.log(`📝 [Sheet] กำลังเตรียมบันทึกสมาชิก: ${displayName}`);
+    console.log(`📝 [Sheet] กำลังบันทึก: ${displayName}`);
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
     await sheet.addRow({
@@ -50,50 +47,69 @@ async function saveNewMember(userId, displayName, groupId) {
       Status: "Active",
       "Group ID": groupId || "Direct Message",
     });
-    console.log("✅ [Sheet] บันทึกข้อมูลสมาชิกใหม่สำเร็จ!");
+    console.log("✅ [Sheet] บันทึกสำเร็จ");
   } catch (err) {
     console.error("❌ [Sheet Error] บันทึกไม่สำเร็จ:", err.message);
   }
 }
 
-// ระบบ Cron ตรวจสอบอายุ
 cron.schedule("0 9 * * *", async () => {
-  console.log("⏰ [Cron] เริ่มทำงานตรวจสอบอายุสมาชิกรายวัน...");
   try {
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
     const rows = await sheet.getRows();
     const today = moment();
-    console.log(`📊 [Cron] ตรวจสอบทั้งหมด ${rows.length} รายชื่อ`);
-    // ... โค้ดส่วนเช็คอายุสมาชิก ...
+    for (let row of rows) {
+      if (row.get("Status") === "Active") {
+        const joinDateStr = row.get("Join Date");
+        if (!joinDateStr) continue;
+        const joinDate = moment(joinDateStr);
+        const daysDiff = today.diff(joinDate, "days");
+        const uId = row.get("User ID");
+        if (daysDiff >= 27 && daysDiff < 30) {
+          await client
+            .pushMessage(uId, {
+              type: "text",
+              text: `📢 แจ้งเตือน: อีก ${30 - daysDiff} วันจะหมดอายุสมาชิกค่ะ`,
+            })
+            .catch(() => {});
+        } else if (daysDiff >= 30) {
+          await client
+            .pushMessage(uId, { type: "text", text: `🚫 หมดอายุสมาชิกแล้วค่ะ` })
+            .catch(() => {});
+          if (ADMIN_LINE_ID) {
+            await client
+              .pushMessage(ADMIN_LINE_ID, {
+                type: "text",
+                text: `🚨 [หมดอายุ] ${row.get("Display Name")} (${uId})`,
+              })
+              .catch(() => {});
+          }
+          await row.delete();
+        }
+      }
+    }
   } catch (err) {
-    console.error("❌ [Cron Error] ระบบตรวจสอบอายุขัดข้อง:", err.message);
+    console.error("Cron Error");
   }
 });
 
-// ------------------------------------------
-// 🛡️ ประตูสำหรับ LINE Webhook
-// ------------------------------------------
 app.post("/webhook", line.middleware(config), (req, res) => {
-  console.log(
-    `📩 [Webhook] ได้รับ Event จาก LINE: ${req.body.events.length} รายการ`,
-  );
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
     .catch((err) => {
-      console.error(
-        "❌ [Middleware Error] ปัญหาที่ Token หรือ Secret:",
-        err.message,
-      );
+      console.error("❌ [Webhook Error]:", err.message);
       res.status(500).end();
     });
 });
 
 async function handleEvent(event) {
-  console.log("📦 [Event Data] ข้อมูลดิบ:", JSON.stringify(event));
+  // ✅ แก้ไขเงื่อนไขการดักจับใหม่ (ไม่บล็อกคนเข้ากลุ่ม)
+  if (!event || !event.type || !event.source) return null;
 
-  if (!event.source || !event.source.userId) {
-    console.log("⚠️ [Skip] Event ไม่มีข้อมูล User ID");
+  // ถ้าไม่ใช่คนเข้ากลุ่ม และไม่มี userId ให้หยุด (กันพวกสัญญาณแปลกปลอม)
+  if (event.type !== "memberJoined" && !event.source.userId) {
+    console.log("⚠️ [Skip] ข้อมูลไม่ครบ");
     return null;
   }
 
@@ -103,29 +119,24 @@ async function handleEvent(event) {
 
   // 1. กรณีคนเข้ากลุ่ม
   if (event.type === "memberJoined") {
-    console.log(`🆕 [Joined] พบคนเข้ากลุ่ม ID: ${groupId}`);
+    console.log(`🆕 [Joined] พบคนเข้ากลุ่ม: ${groupId}`);
     for (let member of event.joined.members) {
       try {
         let displayName = "สมาชิกใหม่";
         try {
-          console.log(
-            `🔍 [Profile] กำลังขอชื่อจาก LINE สำหรับ: ${member.userId}`,
-          );
+          // ดึงโปรไฟล์จาก userId ของคนเข้าใหม่
           const profile = await client.getGroupMemberProfile(
             groupId,
             member.userId,
           );
           displayName = profile.displayName;
-          console.log(`👤 [Profile] ชื่อที่ได้คือ: ${displayName}`);
         } catch (e) {
-          console.log(
-            "⚠️ [Profile Fail] ดึงชื่อไม่ได้ (อาจยังไม่แอดเพื่อนบอท)",
-          );
+          console.log("⚠️ ดึงโปรไฟล์ไม่ได้");
         }
 
+        // เรียกฟังก์ชันบันทึก
         await saveNewMember(member.userId, displayName, groupId);
 
-        console.log("📄 [Sheet] กำลังดึงข้อมูลจาก A1:K1...");
         await doc.loadInfo();
         const sheet = doc.sheetsByIndex[0];
         await sheet.loadCells("A1:K1");
@@ -154,11 +165,11 @@ async function handleEvent(event) {
           text: `สวัสดีคุณ ${displayName} ${welTxt}`,
         });
 
-        console.log(`📤 [Reply] กำลังส่งข้อความต้อนรับเข้ากลุ่ม...`);
-        await client.replyMessage(event.replyToken, messages);
-        console.log("✨ [Success] ส่งข้อความต้อนรับสำเร็จ");
+        await client
+          .replyMessage(event.replyToken, messages)
+          .catch((err) => console.log("Reply Error:", err.message));
       } catch (err) {
-        console.error("❌ [Joined Error] ขั้นตอนเข้ากลุ่มพังที่:", err.message);
+        console.error("Joined Event Error");
       }
     }
   }
@@ -167,11 +178,9 @@ async function handleEvent(event) {
   if (event.type === "message" && event.message.type === "text") {
     const userMsg = event.message.text;
     console.log(
-      `💬 [Message] รับข้อความ: "${userMsg}" จาก ${isGroup ? "กลุ่ม" : "ส่วนตัว"}`,
+      `💬 [Message] "${userMsg}" จาก ${isGroup ? "กลุ่ม" : "ส่วนตัว"}`,
     );
-
     try {
-      console.log("📄 [Sheet] กำลังโหลดค่าจาก I1, J1, K1...");
       await doc.loadInfo();
       const sheet = doc.sheetsByIndex[0];
       await sheet.loadCells("A1:K1");
@@ -190,34 +199,26 @@ async function handleEvent(event) {
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
-          console.log("🤖 [Response] กำลังตอบกลับในกลุ่ม (K1)");
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: groupRes,
-          });
+          await client
+            .replyMessage(event.replyToken, { type: "text", text: groupRes })
+            .catch(() => {});
         }
       } else {
         const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี/g;
         if (payKeyword.test(userMsg)) {
-          console.log("🤖 [Response] ตอบเรื่องชำระเงิน (I1)");
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: payTxt,
-          });
+          await client
+            .replyMessage(event.replyToken, { type: "text", text: payTxt })
+            .catch(() => {});
         } else {
           if (userId !== ADMIN_LINE_ID) {
-            console.log("🤖 [Response] ตอบเรื่องติดต่อแอดมิน/ทั่วไป (J1)");
-            await client.replyMessage(event.replyToken, {
-              type: "text",
-              text: conTxt,
-            });
+            await client
+              .replyMessage(event.replyToken, { type: "text", text: conTxt })
+              .catch(() => {});
           }
         }
       }
 
-      // แจ้งเตือนแอดมิน
       if (userId !== ADMIN_LINE_ID && ADMIN_LINE_ID) {
-        console.log(`📢 [Admin Alert] กำลังแจ้งแอดมิน (ID: ${ADMIN_LINE_ID})`);
         let name = "สมาชิก";
         try {
           const p = isGroup
@@ -225,15 +226,15 @@ async function handleEvent(event) {
             : await client.getProfile(userId);
           name = p.displayName;
         } catch (e) {}
-
-        await client.pushMessage(ADMIN_LINE_ID, {
-          type: "text",
-          text: `📢 มีคนทัก (${isGroup ? "ในกลุ่ม" : "ส่วนตัว"})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
-        });
-        console.log("✅ [Admin Alert] แจ้งเตือนแอดมินสำเร็จ");
+        await client
+          .pushMessage(ADMIN_LINE_ID, {
+            type: "text",
+            text: `📢 มีคนทัก (${isGroup ? "ในกลุ่ม" : "ส่วนตัว"})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
+          })
+          .catch(() => {});
       }
     } catch (err) {
-      console.error("❌ [Message Error] ขั้นตอนตอบข้อความพังที่:", err.message);
+      console.error("Message Processing Error");
     }
   }
 }
