@@ -25,9 +25,12 @@ const client = new line.Client(config);
 const app = express();
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 
-// ✅ แก้จุดนี้: ใช้ Path /ping สำหรับเว็บปลุกโดยเฉพาะ (ไม่ต้องผ่าน line.middleware)
-app.get("/ping", (req, res) => {
-  res.status(200).send("Bot is Awake!");
+// ==========================================
+// 🚀 [แยกส่วน] ประตูสำหรับเว็บปลุก (Cron-job.org)
+// ให้พี่ไปแก้ URL ในเว็บปลุกเป็น: https://.../wake-up
+// ==========================================
+app.get("/wake-up", (req, res) => {
+  res.status(200).send("Bot is Awake! (Internal Wake Up)");
 });
 
 app.get("/", (req, res) => {
@@ -66,17 +69,23 @@ cron.schedule("0 9 * * *", async () => {
         const uId = row.get("User ID");
 
         if (daysDiff >= 27 && daysDiff < 30) {
-          await client.pushMessage(uId, {
-            type: "text",
-            text: `📢 แจ้งเตือน: อีก ${30 - daysDiff} วันจะหมดอายุสมาชิกค่ะ`,
-          }).catch(() => {});
-        } else if (daysDiff >= 30) {
-          await client.pushMessage(uId, { type: "text", text: `🚫 หมดอายุสมาชิกแล้วค่ะ` }).catch(() => {});
-          if (ADMIN_LINE_ID) {
-            await client.pushMessage(ADMIN_LINE_ID, {
+          await client
+            .pushMessage(uId, {
               type: "text",
-              text: `🚨 [หมดอายุ] ${row.get("Display Name")} (${uId})`,
-            }).catch(() => {});
+              text: `📢 แจ้งเตือน: อีก ${30 - daysDiff} วันจะหมดอายุสมาชิกค่ะ`,
+            })
+            .catch(() => {});
+        } else if (daysDiff >= 30) {
+          await client
+            .pushMessage(uId, { type: "text", text: `🚫 หมดอายุสมาชิกแล้วค่ะ` })
+            .catch(() => {});
+          if (ADMIN_LINE_ID) {
+            await client
+              .pushMessage(ADMIN_LINE_ID, {
+                type: "text",
+                text: `🚨 [หมดอายุ] ${row.get("Display Name")} (${uId})`,
+              })
+              .catch(() => {});
           }
           await row.delete();
         }
@@ -87,19 +96,19 @@ cron.schedule("0 9 * * *", async () => {
   }
 });
 
-// ✅ Webhook ของ LINE จะรับเฉพาะข้อมูลจาก LINE จริงๆ เท่านั้น
+// ==========================================
+// 🛡️ [แยกส่วน] ประตูสำหรับ LINE Webhook เท่านั้น
+// ==========================================
 app.post("/webhook", line.middleware(config), (req, res) => {
   Promise.all(req.body.events.map(handleEvent))
     .then((result) => res.json(result))
     .catch((err) => {
-      // ถ้า Error ตรงนี้ แสดงว่าค่า Config (Secret/Token) ของพี่มีปัญหา
       res.status(500).end();
     });
 });
 
 async function handleEvent(event) {
-  // กรองเฉพาะ Event ที่มีข้อมูลครบถ้วน
-  if (!event || !event.source || !event.source.userId) return null;
+  if (!event.source || !event.source.userId) return null;
 
   const userId = event.source.userId;
   const groupId = event.source.groupId;
@@ -110,7 +119,10 @@ async function handleEvent(event) {
       try {
         let displayName = "สมาชิกใหม่";
         try {
-          const profile = await client.getGroupMemberProfile(groupId, member.userId);
+          const profile = await client.getGroupMemberProfile(
+            groupId,
+            member.userId,
+          );
           displayName = profile.displayName;
         } catch (e) {}
 
@@ -126,12 +138,23 @@ async function handleEvent(event) {
 
         const messages = [];
         if (img1 && img1.toString().startsWith("https")) {
-          messages.push({ type: "image", originalContentUrl: img1.toString().trim(), previewImageUrl: img1.toString().trim() });
+          messages.push({
+            type: "image",
+            originalContentUrl: img1.toString().trim(),
+            previewImageUrl: img1.toString().trim(),
+          });
         }
         if (img2 && img2.toString().startsWith("https")) {
-          messages.push({ type: "image", originalContentUrl: img2.toString().trim(), previewImageUrl: img2.toString().trim() });
+          messages.push({
+            type: "image",
+            originalContentUrl: img2.toString().trim(),
+            previewImageUrl: img2.toString().trim(),
+          });
         }
-        messages.push({ type: "text", text: `สวัสดีคุณ ${displayName} ${welTxt}` });
+        messages.push({
+          type: "text",
+          text: `สวัสดีคุณ ${displayName} ${welTxt}`,
+        });
 
         await client.replyMessage(event.replyToken, messages).catch(() => {});
       } catch (err) {
@@ -147,23 +170,37 @@ async function handleEvent(event) {
       const sheet = doc.sheetsByIndex[0];
       await sheet.loadCells("A1:K1");
 
-      const payTxt = (sheet.getCellByA1("I1").value || "รอแอดมินแจ้งนะคะ").toString().trim();
-      const conTxt = (sheet.getCellByA1("J1").value || "รอสักครู่นะคะ").toString().trim();
-      const groupRes = (sheet.getCellByA1("K1").value || "ทักแอดมินไวกว่านะคะพี่ 🙏").toString().trim();
+      const payTxt = (sheet.getCellByA1("I1").value || "รอแอดมินแจ้งนะคะ")
+        .toString()
+        .trim();
+      const conTxt = (sheet.getCellByA1("J1").value || "รอสักครู่นะคะ")
+        .toString()
+        .trim();
+      const groupRes = (
+        sheet.getCellByA1("K1").value || "ทักแอดมินไวกว่านะคะพี่ 🙏"
+      )
+        .toString()
+        .trim();
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
-          await client.replyMessage(event.replyToken, { type: "text", text: groupRes }).catch(() => {});
+          await client
+            .replyMessage(event.replyToken, { type: "text", text: groupRes })
+            .catch(() => {});
         }
       } else {
         const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี/g;
-        const cleanMsg = userMsg.trim(); 
+        const cleanMsg = userMsg.trim();
 
         if (payKeyword.test(cleanMsg)) {
-          await client.replyMessage(event.replyToken, { type: "text", text: payTxt }).catch(() => {});
+          await client
+            .replyMessage(event.replyToken, { type: "text", text: payTxt })
+            .catch(() => {});
         } else {
           if (userId !== ADMIN_LINE_ID) {
-            await client.replyMessage(event.replyToken, { type: "text", text: conTxt }).catch(() => {});
+            await client
+              .replyMessage(event.replyToken, { type: "text", text: conTxt })
+              .catch(() => {});
           }
         }
       }
@@ -171,13 +208,17 @@ async function handleEvent(event) {
       if (userId !== ADMIN_LINE_ID && ADMIN_LINE_ID) {
         let name = "สมาชิก";
         try {
-          const p = isGroup ? await client.getGroupMemberProfile(groupId, userId) : await client.getProfile(userId);
+          const p = isGroup
+            ? await client.getGroupMemberProfile(groupId, userId)
+            : await client.getProfile(userId);
           name = p.displayName;
         } catch (e) {}
-        await client.pushMessage(ADMIN_LINE_ID, {
-          type: "text",
-          text: `📢 มีคนทัก (${isGroup ? 'ในกลุ่ม' : 'ส่วนตัว'})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
-        }).catch(() => {});
+        await client
+          .pushMessage(ADMIN_LINE_ID, {
+            type: "text",
+            text: `📢 มีคนทัก (${isGroup ? "ในกลุ่ม" : "ส่วนตัว"})\n👤 ชื่อ: ${name}\n💬: ${userMsg}`,
+          })
+          .catch(() => {});
       }
     } catch (err) {
       console.error("Message Processing Error");
