@@ -51,7 +51,7 @@ async function saveNewMember(userId, displayName, groupId) {
       await client
         .pushMessage(ADMIN_LINE_ID, {
           type: "text",
-          text: `✅ [บันทึกใหม่]\n👤: ${newMember["Display Name"]}\n🆔: ${userId}\n📅: ${newMember["Join Date"]}`,
+          text: `✅ [บันทึกใหม่]\n👤: ${newMember["Display Name"]}\n📅: ${newMember["Join Date"]}`,
         })
         .catch(() => {});
     }
