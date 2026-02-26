@@ -74,7 +74,7 @@ async function removeMember(userId) {
         await client
           .pushMessage(ADMIN_LINE_ID, {
             type: "text",
-            text: `🗑️ [ลบสมาชิก]\n👤: ${name}\n🆔: ${userId}\n⚠️: ออกจากกลุ่ม/โดนลบ`,
+            text: `🗑️ [ลบสมาชิก]\n👤: ${name}\n⚠️: ออกจากกลุ่ม/โดนลบ`,
           })
           .catch(() => {});
       }
