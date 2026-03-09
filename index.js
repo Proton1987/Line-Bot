@@ -210,10 +210,6 @@ async function handleEvent(event) {
       const conTxt = (sheet.getCellByA1("J1").value || "รอสักครู่นะคะ")
         .toString()
         .trim();
-      const groupRes = (
-        sheet.getCellByA1("K1").value)
-        .toString()
-        .trim();
 
       if (isGroup) {
         if (userId !== ADMIN_LINE_ID) {
