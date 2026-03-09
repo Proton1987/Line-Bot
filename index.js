@@ -211,8 +211,7 @@ async function handleEvent(event) {
         .toString()
         .trim();
       const groupRes = (
-        sheet.getCellByA1("K1").value || "ทักแอดมินไวกว่านะคะพี่ 🙏"
-      )
+        sheet.getCellByA1("K1").value)
         .toString()
         .trim();
 
