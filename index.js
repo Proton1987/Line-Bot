@@ -212,11 +212,11 @@ async function handleEvent(event) {
         .trim();
 
       if (isGroup) {
-        if (userId !== ADMIN_LINE_ID) {
-          await client
-            .replyMessage(event.replyToken, { type: "text", text: groupRes })
-            .catch(() => {});
-        }
+        //if (userId !== ADMIN_LINE_ID) {
+          //await client
+            //.replyMessage(event.replyToken, { type: "text", text: groupRes })
+            //.catch(() => {});
+        //}
       } else {
         const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี/g;
         if (payKeyword.test(userMsg)) {
