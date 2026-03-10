@@ -133,7 +133,6 @@ app.post("/webhook", line.middleware(config), (req, res) => {
 });
 
 async function handleEvent(event) {
-  console.log("ได้รับ Event:", JSON.stringify(event));
   if (!event || !event.type || !event.source) return null;
   const groupId = event.source.groupId;
   const isGroup = !!groupId;
