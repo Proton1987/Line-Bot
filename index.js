@@ -219,15 +219,23 @@ async function handleEvent(event) {
             //.catch(() => {});
         //}
       } else {
-        const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี/g;
+        // เพิ่มคำสั่งดักจับคำให้ครบทุกปุ่มที่ตั้งไว้ใน Rich Menu
+        const payKeyword = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี|ช่องทางชำระเงิน/g;
+        const contactKeyword = /ติดต่อแอดมิน|ติดต่อแอดมิด/g;
+
         if (payKeyword.test(userMsg)) {
           await client
             .replyMessage(event.replyToken, { type: "text", text: payTxt })
-            .catch(() => {});
-        } else if (userId !== ADMIN_LINE_ID) {
+            .catch((e) => console.error("Reply Error (Pay):", e));
+        } else if (contactKeyword.test(userMsg)) {
           await client
             .replyMessage(event.replyToken, { type: "text", text: conTxt })
-            .catch(() => {});
+            .catch((e) => console.error("Reply Error (Contact):", e));
+        } else if (userId !== ADMIN_LINE_ID) {
+          // ถ้าพิมพ์ข้อความอื่นที่นอกเหนือจากปุ่ม ให้ตอบด้วยข้อความติดต่อ (conTxt)
+          await client
+            .replyMessage(event.replyToken, { type: "text", text: conTxt })
+            .catch((e) => console.error("Reply Error (Default):", e));
         }
       }
 
