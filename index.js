@@ -151,7 +151,7 @@ async function broadcastMessage(text) {
 // =============================
 
 cron.schedule(
-  "0 9 * * *",
+  "* * * * *",
   async () => {
     try {
       const sheet = await getSheet();
