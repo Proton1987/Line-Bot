@@ -7,12 +7,19 @@ const serviceAccountAuth = new JWT({ email: process.env.GOOGLE_SERVICE_ACCOUNT_E
 const client = new line.Client(config), app = express(), doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 const getSheet = async () => { await doc.loadInfo(); return doc.sheetsByIndex[0]; };
 
-// --- ฟังก์ชันบันทึกสมาชิก ---
+// --- ฟังก์ชันบันทึกสมาชิก (เรียง A-E และ K) ---
 async function saveNewMember(userId, displayName, groupId) {
     try {
         const sheet = await getSheet();
         const bandId = `usr${Math.floor(1000000 + Math.random() * 9000000)}`;
-        await sheet.addRow({ "User ID": userId, "Display Name": displayName, "Join Date": moment().format("YYYY-MM-DD"), "Status": "Active", "Group ID": groupId || "DM", "Band ID": bandId });
+        await sheet.addRow({ 
+            "User ID": userId, 
+            "Display Name": displayName, 
+            "Join Date": moment().format("YYYY-MM-DD"), 
+            "Status": "Active", 
+            "Group ID": groupId || "DM", 
+            "Band ID": bandId 
+        });
         if (ADMIN_LINE_ID) client.pushMessage(ADMIN_LINE_ID, { type: "text", text: `✅ [บันทึกใหม่]\n👤: ${displayName}\n🆔 Band: ${bandId}` }).catch(() => {});
         return bandId;
     } catch (err) { console.error("❌ Save Error:", err); }
@@ -42,47 +49,55 @@ async function handleEvent(event) {
     if (!event.source) return null;
     const { userId, groupId } = event.source;
 
-    // 1. เข้ากลุ่ม
+    // 1. กรณีเข้ากลุ่ม
     if (event.type === "memberJoined") {
         for (let m of event.joined.members) {
             let p = await client.getGroupMemberProfile(groupId, m.userId).catch(() => ({ displayName: "สมาชิกใหม่" }));
             const bandId = await saveNewMember(m.userId, p.displayName, groupId);
-            const sheet = await getSheet(); await sheet.loadCells("F1:H1");
+            const sheet = await getSheet(); await sheet.loadCells("F1:J1");
             const wel = sheet.getCellByA1("H1").value || "ยินดีต้อนรับค่ะ";
             await client.replyMessage(event.replyToken, { type: "text", text: `สวัสดีคุณ ${p.displayName} ${wel}\n\n📌 ตั้งชื่อในแอป BAND ว่า: ${bandId}` }).catch(() => {});
         }
     }
 
-    // 2. ข้อความ
+    // 2. กรณีข้อความ
     if (event.type === "message" && event.message.type === "text") {
         const msg = event.message.text.trim();
         
-        // คำสั่ง Admin
+        // คำสั่ง Admin (ล็อกไว้เฉพาะคุณ)
         if (userId === ADMIN_LINE_ID && msg.startsWith("!")) {
-            const sheet = await getSheet(); await sheet.loadCells("F1:G1");
+            const sheet = await getSheet();
             if (msg === "!list") {
                 const rows = await sheet.getRows();
-                let txt = "📋 รายชื่อสมาชิก:\n";
-                rows.forEach(r => txt += `👤 ${r.get("Display Name")} | Band: ${r.get("Band ID")}\n`);
+                let txt = "📋 รายชื่อสมาชิกทั้งหมด:\n";
+                rows.forEach(r => txt += `👤 ${r.get("Display Name")} | Band: ${r.get("Band ID") || "-"}\n`);
                 return client.replyMessage(event.replyToken, { type: "text", text: txt });
             }
             if (msg.startsWith("!setimg")) {
                 const parts = msg.split(" ");
+                await sheet.loadCells("F1:G1");
                 sheet.getCellByA1(parts[0] === "!setimg1" ? "F1" : "G1").value = parts[1];
                 await sheet.saveUpdatedCells();
                 return client.replyMessage(event.replyToken, { type: "text", text: "✅ อัปเดตรูปแล้ว" });
             }
             if (msg === "!generateAllBandID") {
                 const rows = await sheet.getRows();
-                for (let r of rows) if (!r.get("Band ID")) { r.set("Band ID", `usr${Math.floor(1000000 + Math.random() * 9000000)}`); await r.save(); }
+                for (let r of rows) {
+                    if (!r.get("Band ID")) { 
+                        r.set("Band ID", `usr${Math.floor(1000000 + Math.random() * 9000000)}`); 
+                        await r.save(); 
+                    }
+                }
                 return client.replyMessage(event.replyToken, { type: "text", text: "✅ สร้าง ID ให้คนเก่าครบแล้ว" });
             }
         }
 
-        // ตอบกลับปกติ
+        // ตอบกลับปกติในแชทส่วนตัว
         if (!groupId) {
+            const sheet = await getSheet(); await sheet.loadCells("I1:J1");
             const isPay = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี|ช่องทางชำระเงิน/g.test(msg);
-            await client.replyMessage(event.replyToken, { type: "text", text: isPay ? "แจ้งเลขบัญชี..." : "ติดต่อแอดมิน..." }).catch(() => {});
+            const replyTxt = isPay ? (sheet.getCellByA1("I1").value || "แจ้งเลขบัญชี...") : (sheet.getCellByA1("J1").value || "ติดต่อแอดมิน...");
+            await client.replyMessage(event.replyToken, { type: "text", text: replyTxt }).catch(() => {});
         }
     }
 }
