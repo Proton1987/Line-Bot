@@ -174,9 +174,7 @@ cron.schedule(
             .catch(() => {});
 
           if (groupId && groupId !== "Direct Message") {
-            await client
-              .kickoutFromGroup(groupId, [userId])
-              .catch(() => {});
+            await client.kickoutFromGroupChat(groupId, [userId]).catch(()=>{});
           }
 
           await removeMember(userId);
