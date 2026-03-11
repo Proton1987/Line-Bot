@@ -1,13 +1,22 @@
-const line = require("@line/bot-sdk"), express = require("express"), { GoogleSpreadsheet } = require("google-spreadsheet"), { JWT } = require("google-auth-library"), moment = require("moment"), cron = require("node-cron");
+const line = require("@line/bot-sdk"), 
+      express = require("express"), 
+      { GoogleSpreadsheet } = require("google-spreadsheet"), 
+      { JWT } = require("google-auth-library"), 
+      moment = require("moment"), 
+      cron = require("node-cron");
 
 const config = { channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN || "", channelSecret: process.env.CHANNEL_SECRET || "" };
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID, ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
-const serviceAccountAuth = new JWT({ email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"), scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
+const serviceAccountAuth = new JWT({ 
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, 
+    key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"), 
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"] 
+});
 
 const client = new line.Client(config), app = express(), doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
 const getSheet = async () => { await doc.loadInfo(); return doc.sheetsByIndex[0]; };
 
-// --- ฟังก์ชันบันทึกสมาชิก (เรียง A-E และ K) ---
+// --- ฟังก์ชันบันทึกสมาชิก (เรียงตามคอลัมน์ที่คุณระบุ) ---
 async function saveNewMember(userId, displayName, groupId) {
     try {
         const sheet = await getSheet();
@@ -25,7 +34,7 @@ async function saveNewMember(userId, displayName, groupId) {
     } catch (err) { console.error("❌ Save Error:", err); }
 }
 
-// --- Cron Job ตรวจสอบรายวัน ---
+// --- Cron Job ตรวจสอบอายุ (ทุก 09:00 น.) ---
 cron.schedule("0 9 * * *", async () => {
     const sheet = await getSheet();
     const rows = await sheet.getRows();
@@ -49,30 +58,33 @@ async function handleEvent(event) {
     if (!event.source) return null;
     const { userId, groupId } = event.source;
 
-    // 1. กรณีเข้ากลุ่ม
+    // 1. กรณีคนเข้ากลุ่ม
     if (event.type === "memberJoined") {
         for (let m of event.joined.members) {
             let p = await client.getGroupMemberProfile(groupId, m.userId).catch(() => ({ displayName: "สมาชิกใหม่" }));
             const bandId = await saveNewMember(m.userId, p.displayName, groupId);
-            const sheet = await getSheet(); await sheet.loadCells("F1:J1");
+            const sheet = await getSheet(); 
+            await sheet.loadCells("F1:H1");
             const wel = sheet.getCellByA1("H1").value || "ยินดีต้อนรับค่ะ";
             await client.replyMessage(event.replyToken, { type: "text", text: `สวัสดีคุณ ${p.displayName} ${wel}\n\n📌 ตั้งชื่อในแอป BAND ว่า: ${bandId}` }).catch(() => {});
         }
     }
 
-    // 2. กรณีข้อความ
+    // 2. กรณีส่งข้อความ
     if (event.type === "message" && event.message.type === "text") {
         const msg = event.message.text.trim();
-        
-        // คำสั่ง Admin (ล็อกไว้เฉพาะคุณ)
+        const sheet = await getSheet();
+
+        // คำสั่ง Admin ผ่าน LINE
         if (userId === ADMIN_LINE_ID && msg.startsWith("!")) {
-            const sheet = await getSheet();
+            const rows = await sheet.getRows();
+            
             if (msg === "!list") {
-                const rows = await sheet.getRows();
                 let txt = "📋 รายชื่อสมาชิกทั้งหมด:\n";
                 rows.forEach(r => txt += `👤 ${r.get("Display Name")} | Band: ${r.get("Band ID") || "-"}\n`);
                 return client.replyMessage(event.replyToken, { type: "text", text: txt });
             }
+            
             if (msg.startsWith("!setimg")) {
                 const parts = msg.split(" ");
                 await sheet.loadCells("F1:G1");
@@ -80,21 +92,23 @@ async function handleEvent(event) {
                 await sheet.saveUpdatedCells();
                 return client.replyMessage(event.replyToken, { type: "text", text: "✅ อัปเดตรูปแล้ว" });
             }
+            
             if (msg === "!generateAllBandID") {
-                const rows = await sheet.getRows();
+                let count = 0;
                 for (let r of rows) {
                     if (!r.get("Band ID")) { 
                         r.set("Band ID", `usr${Math.floor(1000000 + Math.random() * 9000000)}`); 
                         await r.save(); 
+                        count++;
                     }
                 }
-                return client.replyMessage(event.replyToken, { type: "text", text: "✅ สร้าง ID ให้คนเก่าครบแล้ว" });
+                return client.replyMessage(event.replyToken, { type: "text", text: `✅ สร้าง ID ให้สมาชิกเก่า ${count} คนสำเร็จ` });
             }
         }
 
         // ตอบกลับปกติในแชทส่วนตัว
         if (!groupId) {
-            const sheet = await getSheet(); await sheet.loadCells("I1:J1");
+            await sheet.loadCells("I1:J1");
             const isPay = /สนใจ|ชำระเงิน|จ่ายเงิน|เลขบัญชี|ช่องทางชำระเงิน/g.test(msg);
             const replyTxt = isPay ? (sheet.getCellByA1("I1").value || "แจ้งเลขบัญชี...") : (sheet.getCellByA1("J1").value || "ติดต่อแอดมิน...");
             await client.replyMessage(event.replyToken, { type: "text", text: replyTxt }).catch(() => {});
